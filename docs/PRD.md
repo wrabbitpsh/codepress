@@ -150,13 +150,96 @@
 |---|---|---|
 | 문의 등록 | 항상 표시 | 문의 등록 폼 패널 |
 | 문의 목록 | 항상 표시 | 문의 목록·필터·엑셀 툴바 패널 |
-| 관리자 설정 | **관리자 모드에서만** 표시 | 엑셀 가져오기/내보내기 전용 패널 |
+| 관리자 설정 | **관리자 모드에서만** 표시 | 엑셀 가져오기/내보내기 + Anthropic API 키 설정 패널 |
 
 - 활성 탭: 하단 2px 파란 밑줄(`border-primary`), `primary` 텍스트 색상.
 - 비활성 탭: 투명 밑줄, 회색 텍스트. hover 시 회색 밑줄.
 - 접근성: `role="tab"`, `aria-selected`, `role="tabpanel"`, `aria-labelledby` 적용.
 - 관리자 로그인 시 "문의 목록" 탭으로 자동 전환.
 - 로그아웃 시 "문의 등록" 탭으로 자동 전환. 관리자 전용 탭은 숨김 처리.
+
+### 3.11 LLM 자동 답변 생성 (신규)
+
+관리자 모드에서 Claude API를 호출하여 문의 내용을 분석하고 답변을 자동 생성·즉시 저장한다.
+
+#### 3.11.1 API 키 설정
+
+- **관리자 설정** 탭에 Anthropic API 키 입력 섹션을 추가한다.
+
+| UI 요소 | 설명 |
+|---|---|
+| `<input type="password">` | API 키 입력 (`sk-ant-...`) |
+| "저장" 버튼 | `localStorage` 키 `bipa-portal:anthropic-key`에 저장 |
+| "삭제" 버튼 | 저장된 키 삭제 (초기화) |
+| 상태 표시 | 저장된 키가 있으면 "✔ API 키 등록됨", 없으면 "API 키를 입력해주세요" |
+
+- 키는 `localStorage`에 평문 저장한다 (교육·시범용).
+- API 키가 등록되지 않은 경우 "AI 답변 생성" 버튼을 비활성화(disabled)하고 tooltip으로 "관리자 설정에서 API 키를 먼저 등록하세요."를 표시한다.
+
+#### 3.11.2 AI 답변 생성 버튼
+
+- **관리자 모드**의 각 카드 답변 패널 내 `<textarea>` 상단에 "✨ AI 답변 생성" 버튼을 추가한다.
+- 버튼 클릭 흐름:
+
+```
+버튼 클릭
+  → 버튼을 로딩 상태("생성 중...")로 전환, disabled 처리
+  → Anthropic API 호출 (아래 §3.11.3 참고)
+  → 성공: 생성된 텍스트를 reply 필드에 저장 + repliedAt = 현재 시각 기록
+         + 목록·카드 즉시 갱신 + 버튼 원상 복귀
+  → 실패: alert("AI 답변 생성에 실패했습니다. API 키와 네트워크를 확인해주세요.")
+         + 버튼 원상 복귀 (기존 reply 값 유지)
+```
+
+#### 3.11.3 API 호출 명세
+
+| 항목 | 값 |
+|---|---|
+| 엔드포인트 | `https://api.anthropic.com/v1/messages` |
+| 메서드 | POST |
+| 모델 | `claude-haiku-4-5-20251001` |
+| `max_tokens` | 512 |
+| 헤더 | `x-api-key: <저장된 키>`, `anthropic-version: 2023-06-01`, `content-type: application/json` |
+
+> **CORS 참고:** 브라우저에서 `api.anthropic.com`으로 직접 요청 시 CORS 제한이 발생할 수 있다. 교육·시범 환경에서는 브라우저의 CORS 정책에 따라 동작 여부가 달라지므로, 실운영 시에는 백엔드 프록시를 통해 API 키를 보호하는 것을 권장한다.
+
+**시스템 프롬프트:**
+
+```
+당신은 부산정보산업진흥원(BIPA) AI·DX 지원사업 담당 직원입니다.
+아래 시민·기업의 문의에 대해 친절하고 전문적인 한국어 답변을 작성해주세요.
+- 200자 이내로 간결하게 작성합니다.
+- 구체적인 안내가 어려운 경우 BIPA 홈페이지(www.bipa.or.kr) 또는 대표번호(051-749-9300) 문의를 안내합니다.
+- 정중하고 공손한 어투를 사용합니다.
+```
+
+**사용자 메시지 구성:**
+
+```
+카테고리: {category}
+제목: {title}
+문의 내용: {content}
+```
+
+#### 3.11.4 UI/UX 명세
+
+| 상태 | 버튼 레이블 | 버튼 스타일 |
+|---|---|---|
+| 기본 (키 등록됨) | ✨ AI 답변 생성 | `accent` 계열 테두리 버튼 |
+| 생성 중 | ⏳ 생성 중... | 회색, disabled |
+| 키 미등록 | ✨ AI 답변 생성 | 회색, disabled, tooltip |
+
+- 버튼은 `<textarea>` 바로 위, "저장" 버튼과 같은 행(row) 좌측에 배치한다.
+- 생성 완료 후 `<textarea>`에 결과가 자동으로 채워지고 즉시 저장된다 (별도 "저장" 버튼 클릭 불필요).
+
+#### 3.11.5 보안 및 제약
+
+| 항목 | 내용 |
+|---|---|
+| API 키 노출 | `localStorage`에 평문 저장. 교육·시범 목적에 한해 허용. 운영 환경에서는 서버 프록시 필요 |
+| 요청 빈도 | 건당 1회 호출. 별도 rate-limit 로직 없음 |
+| 비용 | 관리자가 직접 소유한 Anthropic API 키 사용. 비용은 키 소유자 부담 |
+| 오프라인 | 네트워크 없는 환경에서는 API 호출 실패 처리 |
 
 ---
 
@@ -191,7 +274,8 @@
 **저장소:** `localStorage`, 키 = `bipa-portal:inquiries`  
 **초기 데이터:** 로컬스토리지에 데이터가 없을 경우 5건의 샘플 데이터로 초기화.  
 **ID 시퀀스:** 앱 로드 시 기존 최대 ID + 1에서 시작 (최솟값 100).  
-**인증 상태:** `sessionStorage`, 키 = `bipa-portal:admin` (값: `"true"`)
+**인증 상태:** `sessionStorage`, 키 = `bipa-portal:admin` (값: `"true"`)  
+**Anthropic API 키:** `localStorage`, 키 = `bipa-portal:anthropic-key` (평문 문자열)
 
 ---
 
@@ -256,6 +340,7 @@
 | 마크업 | HTML5 (단일 파일) |
 | 스타일링 | Tailwind CSS v3 (CDN) |
 | 엑셀 처리 | SheetJS (xlsx 0.20.3, CDN) |
+| LLM API | Anthropic Messages API (직접 fetch 호출) |
 | 폰트 | Google Fonts – Noto Sans KR |
 | 데이터 저장 | Browser localStorage |
 | 인증 상태 | Browser sessionStorage |

@@ -188,6 +188,25 @@
               </label>
             </div>
           </div>
+
+          <!-- Anthropic API 키 설정 -->
+          <div class="mt-6 border-t border-gray-200 pt-6">
+            <h3 class="text-sm font-semibold text-gray-800 mb-1">Anthropic API 키 설정</h3>
+            <p class="text-xs text-gray-500 mb-3">AI 자동 답변 생성에 사용할 Anthropic API 키를 등록하세요.</p>
+            <div class="flex gap-2 mb-2">
+              <input id="apiKeyInput" type="password" placeholder="sk-ant-..."
+                class="flex-1 border border-gray-300 rounded-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" />
+              <button id="apiKeySave"
+                class="bg-primary hover:bg-blue-900 text-white text-sm font-medium px-4 py-2 rounded-card transition-colors duration-150 whitespace-nowrap">
+                저장
+              </button>
+              <button id="apiKeyDelete"
+                class="border border-gray-300 text-gray-600 hover:border-red-400 hover:text-red-500 text-sm font-medium px-4 py-2 rounded-card transition-colors duration-150 whitespace-nowrap">
+                삭제
+              </button>
+            </div>
+            <p id="apiKeyStatus" class="text-xs text-gray-400"></p>
+          </div>
         </div>
       </section>
     </div>
@@ -200,9 +219,10 @@
 
   <script>
     (() => {
-      const STORAGE_KEY = 'bipa-portal:inquiries';
-      const ADMIN_KEY   = 'bipa-portal:admin';
-      const ADMIN_PW    = 'bipa2025';
+      const STORAGE_KEY        = 'bipa-portal:inquiries';
+      const ADMIN_KEY          = 'bipa-portal:admin';
+      const ADMIN_PW           = 'bipa2025';
+      const ANTHROPIC_KEY_STORAGE = 'bipa-portal:anthropic-key';
 
       const CATEGORIES = [
         'AI·DX 솔루션 도입',
@@ -250,6 +270,48 @@
 
       function isAdmin() {
         return sessionStorage.getItem(ADMIN_KEY) === 'true';
+      }
+
+      function getApiKey() {
+        return localStorage.getItem(ANTHROPIC_KEY_STORAGE) || '';
+      }
+
+      function renderApiKeyStatus() {
+        const el = document.getElementById('apiKeyStatus');
+        if (!el) return;
+        const key = getApiKey();
+        if (key) {
+          el.textContent = '✔ API 키 등록됨';
+          el.className = 'text-xs text-green-600 font-medium';
+        } else {
+          el.textContent = 'API 키를 입력해주세요';
+          el.className = 'text-xs text-gray-400';
+        }
+      }
+
+      async function generateAiReply(item) {
+        const apiKey = getApiKey();
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 512,
+            system: `당신은 부산정보산업진흥원(BIPA) AI·DX 지원사업 담당 직원입니다.\n아래 시민·기업의 문의에 대해 친절하고 전문적인 한국어 답변을 작성해주세요.\n- 200자 이내로 간결하게 작성합니다.\n- 구체적인 안내가 어려운 경우 BIPA 홈페이지(www.bipa.or.kr) 또는 대표번호(051-749-9300) 문의를 안내합니다.\n- 정중하고 공손한 어투를 사용합니다.`,
+            messages: [{
+              role: 'user',
+              content: `카테고리: ${item.category}\n제목: ${item.title}\n문의 내용: ${item.content}`,
+            }],
+          }),
+        });
+        if (!res.ok) throw new Error(`API error ${res.status}`);
+        const data = await res.json();
+        return data.content[0].text;
       }
 
       // ── Storage ────────────────────────────────────────────────────────────
@@ -404,14 +466,22 @@
       function renderReplyBlock(item) {
         if (isAdmin()) {
           const hasReply = item.reply && item.reply.trim();
+          const hasKey = !!getApiKey();
+          const aiBtnClass = hasKey
+            ? 'ai-reply-btn text-xs font-medium px-3 py-1.5 rounded-card border border-accent text-accent hover:bg-sky-50 transition-colors duration-150'
+            : 'ai-reply-btn text-xs font-medium px-3 py-1.5 rounded-card border border-gray-200 text-gray-400 cursor-not-allowed';
+          const aiBtnAttrs = hasKey ? '' : 'disabled title="관리자 설정에서 API 키를 먼저 등록하세요."';
           return `
             <div class="mt-3 pt-3 border-t border-gray-200">
               <button class="reply-toggle text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors" data-id="${item.id}">
                 ${hasReply ? '답변 수정' : '답변 작성'}
               </button>
               <div class="reply-panel hidden mt-2" data-id="${item.id}">
+                <div class="flex items-center gap-2 mb-2">
+                  <button class="${aiBtnClass}" data-id="${item.id}" ${aiBtnAttrs}>✨ AI 답변 생성</button>
+                  <button class="reply-save bg-primary hover:bg-blue-900 text-white text-xs font-medium px-3 py-1.5 rounded-card transition-colors duration-150" data-id="${item.id}">저장</button>
+                </div>
                 <textarea class="reply-textarea w-full border border-gray-300 rounded-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-vertical" rows="3" placeholder="답변 내용을 입력하세요" data-id="${item.id}">${esc(item.reply || '')}</textarea>
-                <button class="reply-save mt-2 bg-primary hover:bg-blue-900 text-white text-xs font-medium px-3 py-1.5 rounded-card transition-colors duration-150" data-id="${item.id}">저장</button>
               </div>
             </div>`;
         }
@@ -464,6 +534,7 @@
         renderTabs();
         renderFilters();
         renderList();
+        renderApiKeyStatus();
       }
 
       // ── Relative time refresh ──────────────────────────────────────────────
@@ -587,6 +658,29 @@
           inquiries = inquiries.filter(i => i.id !== id);
           save();
           render();
+          return;
+        }
+
+        // AI 답변 생성
+        const aiBtn = e.target.closest('.ai-reply-btn');
+        if (aiBtn && !aiBtn.disabled) {
+          const id = Number(aiBtn.dataset.id);
+          const item = inquiries.find(i => i.id === id);
+          if (!item) return;
+          aiBtn.textContent = '⏳ 생성 중...';
+          aiBtn.disabled = true;
+          aiBtn.className = 'ai-reply-btn text-xs font-medium px-3 py-1.5 rounded-card border border-gray-200 text-gray-400 cursor-not-allowed';
+          generateAiReply(item).then(text => {
+            item.reply = text;
+            item.repliedAt = Date.now();
+            save();
+            render();
+          }).catch(() => {
+            alert('AI 답변 생성에 실패했습니다. API 키와 네트워크를 확인해주세요.');
+            aiBtn.textContent = '✨ AI 답변 생성';
+            aiBtn.disabled = false;
+            aiBtn.className = 'ai-reply-btn text-xs font-medium px-3 py-1.5 rounded-card border border-accent text-accent hover:bg-sky-50 transition-colors duration-150';
+          });
           return;
         }
 
@@ -723,6 +817,24 @@
           e.target.value = '';
         };
         reader.readAsArrayBuffer(file);
+      });
+
+      // ── API Key ────────────────────────────────────────────────────────────
+
+      document.getElementById('apiKeySave').addEventListener('click', () => {
+        const val = document.getElementById('apiKeyInput').value.trim();
+        if (!val) return;
+        localStorage.setItem(ANTHROPIC_KEY_STORAGE, val);
+        document.getElementById('apiKeyInput').value = '';
+        renderApiKeyStatus();
+        render();
+      });
+
+      document.getElementById('apiKeyDelete').addEventListener('click', () => {
+        localStorage.removeItem(ANTHROPIC_KEY_STORAGE);
+        document.getElementById('apiKeyInput').value = '';
+        renderApiKeyStatus();
+        render();
       });
 
       // ── Init ───────────────────────────────────────────────────────────────

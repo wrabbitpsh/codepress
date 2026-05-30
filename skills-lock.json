@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "prd-generator": {
+      "source": "jamesrochabrun/skills",
+      "sourceType": "github",
+      "skillPath": "skills/prd-generator/SKILL.md",
+      "computedHash": "ce4db0011a0dbea1f2b6474738031c094c9f96de93fa09e7917c9c66f8c7024b"
+    }
+  }
+}
